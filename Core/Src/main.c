@@ -40,7 +40,7 @@
 #define MAX_PWM_VALUE 	900
 
 #define SIZE_OF_RX_BUFFER 	4
-#define SIZE_OF_TX_BUFFER 	64
+#define SIZE_OF_TX_BUFFER 	32
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -107,6 +107,8 @@ int main(void)
 	//Measurement IV res
 	uint16_t spi_mcp1;
 	uint16_t spi_mcp2;
+	uint8_t mode_multiplexer;
+	uint8_t mode_multiplication;
 
 	//Termo and TEC PID
 	float kp = 22.84, ki = 2.25, kd = 3.38;
@@ -179,11 +181,11 @@ int main(void)
   {
 	  if (event_TEC == 2){
 
-	      //Reset event
-	      event_TEC = 0;
-
 		  HAL_TIM_Base_Stop_IT(&htim7);
 		  //Start critical section
+
+		  //Reset event
+		  event_TEC = 0;
 
 	      HAL_GPIO_WritePin(GPIOA, SSB1_Pin, GPIO_PIN_RESET);
 	      spi_termo = MAX6675_READ_TERMO(&hspi1);
@@ -214,10 +216,11 @@ int main(void)
 	    	  HAL_Delay(20);
 	    	  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pwm);
 	      }
-	      /*	Debug section	*/
+	      /*	Debug section
 	      char debug[32] = {0};
 	      sprintf(debug, "TC termo: %d\r\n", termo_filtered);
 		  HAL_UART_Transmit(&huart2, (char*) debug, sizeof(debug),10);
+		  */
 	  }
 	  // Receive body
 	  if (event_RX == 1){
@@ -228,15 +231,17 @@ int main(void)
 	      /*
 	       *	Receive commands are divided into:
 	       *
-	       *	'1' - Enable|Disable pin PWM TEC;
+	       *	'1' - Enable|Disable pin PWM TEC,
 	       *
-	       *	'2' - Send|Set temperature;
+	       *	'2' - Send|Set temperature,
 	       *
-	       *	'3' - Enable|Disable pins for measurement;
+	       *	'3' - Enable|Disable pins for measurement,
 	       *
-	       *	'4' - Take|Manage measurement
+	       *	'4' - Manage measurement,
 	       *
-	       *	'5' - Error handler;
+	       *	'5' - Take measurement,
+	       *
+	       *	'other' - Error handler;
 	       */
 
 	      switch (rx_buffer[0]){
@@ -262,10 +267,10 @@ int main(void)
 	      		   */
 		    	  if (rx_buffer[1] == 'y'){
 		    		  HAL_GPIO_WritePin(GPIOB, TECswitch_Pin, GPIO_PIN_SET);
-		    		  HAL_UART_Transmit(&huart2, "TEC_PIN SET\r\n", sizeof("TEC_PIN SET\r\n"),10);
+		    		  HAL_UART_Transmit(&huart2, "TEC_PIN: SET\r\n", sizeof("TEC_PIN: SET\r\n"),10);
 		    	  } else if (rx_buffer[1] == 'n'){
 		    		  HAL_GPIO_WritePin(GPIOB, TECswitch_Pin, GPIO_PIN_RESET);
-		    		  HAL_UART_Transmit(&huart2, "TEC_PIN RESET\r\n", sizeof("TEC_PIN RESET\r\n"),10);
+		    		  HAL_UART_Transmit(&huart2, "TEC_PIN: RESET\r\n", sizeof("TEC_PIN: RESET\r\n"),10);
 		    	  }
 		    	  if (rx_buffer[2] == 'r'){
 		    		  memset(str, 0, sizeof(str));
@@ -359,13 +364,13 @@ int main(void)
 	      		   *			2 - x50;
 	      		   */
 	      		memset(str, 0, sizeof(str));
-	      		int multi, multp;
+	      		int multi, multpli;
 	      		if (rx_buffer[1] == 'y'){	//Enable
 	      			HAL_GPIO_WritePin(GPIOB, E_R_select_Pin, GPIO_PIN_RESET);
-	      			HAL_UART_Transmit(&huart2, "4P_PIN RESET\r\n", sizeof("4P_PIN RESET\r\n"),10);
+	      			HAL_UART_Transmit(&huart2, "4P_PIN: RESET\r\n", sizeof("4P_PIN: RESET\r\n"),10);
 	      		} else if (rx_buffer[1] == 'n'){	//Disable
 	      			HAL_GPIO_WritePin(GPIOB, E_R_select_Pin, GPIO_PIN_SET);
-	      			HAL_UART_Transmit(&huart2, "4P_PIN SET\r\n", sizeof("4P_PIN SET\r\n"),10);
+	      			HAL_UART_Transmit(&huart2, "4P_PIN: SET\r\n", sizeof("4P_PIN: SET\r\n"),10);
 	      		} else if (rx_buffer[1] == 'i'){	//Change Output
 	      			if (rx_buffer[2] == 'c'){
 	      				multi = atoi(rx_buffer+3);
@@ -376,44 +381,102 @@ int main(void)
       					sprintf(str, "4P_I_set: FAIL unk output!\r\n");
       				} else {
       					selectMuxPin(multi, selectPins);
+      					mode_multiplexer = multi;
     	      			HAL_Delay(1);
-      					sprintf(str, "4P_I_set: %d output!\r\n", multi);
+      					sprintf(str, "4P_I_set: %d!\r\n", multi);
       				}
       				HAL_UART_Transmit(&huart2, str, sizeof(str),10);
 	      		} else if (rx_buffer[1] == 'v'){	//Change Multiplication
 	      			if (rx_buffer[2] == 'c'){
-	      				multp = atoi(rx_buffer+3);
+	      				multpli = atoi(rx_buffer+3);
 	      			} else if (rx_buffer[2] == 'x'){
-	      				multp = rx_buffer[3];
+	      				multpli = rx_buffer[3];
 	      			}
-      				if (!(multp >= 0 && multp <= 2)){
+      				if (!(multpli >= 0 && multpli <= 2)){
       					sprintf(str, "4P_V_set: FAIL unk Multiplication!\r\n");
       				} else{
-      					selectMuxPin(multp, multpPins);
+      					selectMuxPin(multpli, multpPins);
+      					mode_multiplication = multpli;
     	      			HAL_Delay(1);
-      					sprintf(str, "4P_V_set: %d Multiplication!\r\n", multp);
+      					sprintf(str, "4P_V_set: %d!\r\n", multpli);
       				}
       				HAL_UART_Transmit(&huart2, str, sizeof(str),10);
 	      		}
 	      		break;
 
 	      	  case '4':
-	      		  /*	Take|Manage measurement
+	      		  /*	Manage measurement;
+	      		   *	In this case available command:
 	      		   *
+	      		   *	'c' - set current by the DAC from console:
+		    	   * 		CALLED by the 2 byte in Receive array
+		    	   * 		SET by the last 2 ASCII byte converted to int,
+		    	   * 		RECEIVE in Volt M + L BYTE in ASCII,
+		    	   * 		RANGE in Volt: 0 : 33,
+		    	   * 		RETURN COMPLETE Response - DAC_set,
+		    	   * 		Exmpl: receive 0x'2' 'c' '3' '0' - set dac 3V;
+		    	   * 			      		   *
+	      		   *	'x' - SET current by the DAC uint8_t:
+	      		   *		CALLED by the 2 byte in Receive array,
+	      		   *		SET by the uint16_t,
+	      		   *		RECEIVE in RAW 12 bits,
+	      		   *		RANGE in RAW: 0: 4095,
+	      		   *		RETURN COMPLETE Response - DAC_set,
+	      		   *		Exmpl: receive 0x34 78 04 00 - set dac 1024 ~ 0.82V;
 	      		   */
+	      		  memset(str, 0, sizeof(str));
+	      		  int dac;
+	      		  if (rx_buffer[1] == 'c'){
+	      			  dac = atoi(rx_buffer+2);
+	      			  dac = 124 * dac;
+	      		  } else if (rx_buffer[1] == 'x'){
+	      			  dac = ((uint32_t) rx_buffer[2] << 8) | rx_buffer[3];
+	      		  }
+	      		  if (!(dac >= 0 && dac <= 4095)){
+	      			  sprintf(str, "DAC_set: FAIL impossible value!\r\n");
+	      		  } else{
+	      			  HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dac);
+	      			  sprintf(str, "DAC_set: %d\r\n", dac);
+	      		  }
+	      		  HAL_UART_Transmit(&huart2, str, sizeof(str),10);
+	      		  break;
 
-	    		  HAL_TIM_Base_Stop_IT(&htim7);
-	    		  //Start critical section
-	    		  //Check SPI V
-	    	      HAL_GPIO_WritePin(GPIOA, SSB3_Pin, GPIO_PIN_RESET);
-	    	      spi_mcp1 = MCP3201_READ(&hspi1);
-	    	      HAL_GPIO_WritePin(GPIOA, SSB3_Pin, GPIO_PIN_SET);
-	    	      //Check SPI A
-	    	      HAL_GPIO_WritePin(SSB4_GPIO_Port, SSB4_Pin, GPIO_PIN_RESET);
-	    	      spi_mcp2 = MCP3201_READ(&hspi1);
-	    	      HAL_GPIO_WritePin(SSB4_GPIO_Port, SSB4_Pin, GPIO_PIN_SET);
-	    	      //End critical section
-	    	      HAL_TIM_Base_Start(&htim7);
+	      	  case '5':
+	      		  /*	Take measurement;
+	      		   * 	In this case available command:
+	      		   *
+	      		   * 	'o' - One shot mode:
+	      		   * 		Measurement current and voltage from probes,
+	      		   * 		RETURN 2 Message,
+	      		   * 		1 MESSAGE ADC_Ammeter, and Mode,
+	      		   * 		2's MESSAGE ADC_Voltmeter, and Mode,
+	      		   *		Calculate: R = (ADC_Voltmeter/ADC_Ammeter)*
+	      		   *			*(R_mode_Ammeter/ K_mode_multiplication);
+	      		   *
+	      		   *	'a' - Measurement multiple dimensions:
+	      		   *		More useful algorithm which search optimal
+	      		   *		DAC value and Modes for measurement resistance;
+	      		   */
+	      		  memset(str, 0, sizeof(str));
+	      		  if (rx_buffer[1] == 'o'){
+
+					  //Read SPI Ammeter
+					  HAL_GPIO_WritePin(GPIOA, SSB3_Pin, GPIO_PIN_RESET);
+					  spi_mcp1 = MCP3201_READ(&hspi1);
+					  HAL_GPIO_WritePin(GPIOA, SSB3_Pin, GPIO_PIN_SET);
+
+					  //Read SPI Voltmeter
+					  HAL_GPIO_WritePin(SSB4_GPIO_Port, SSB4_Pin, GPIO_PIN_RESET);
+					  spi_mcp2 = MCP3201_READ(&hspi1);
+					  HAL_GPIO_WritePin(SSB4_GPIO_Port, SSB4_Pin, GPIO_PIN_SET);
+
+					  sprintf(str, "ADC_Ammeter: %d, Mode: %d\r\n", spi_mcp1, mode_multiplexer);
+					  HAL_UART_Transmit(&huart2, str, sizeof(str),10);
+					  sprintf(str, "ADC_Voltmeter: %d, Mode: %d\r\n", spi_mcp2, mode_multiplication);
+					  HAL_UART_Transmit(&huart2, str, sizeof(str),10);
+	      		  } else if (rx_buffer[1] == 'a'){
+
+	      		  }
 	      		  break;
 
 	      	  default:
